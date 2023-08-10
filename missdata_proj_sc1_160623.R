@@ -6,6 +6,7 @@ library(lubridate)
 library(dplyr)
 library(mice) # for MI
 library(mitml) #for pooling MI
+library(ggpubr) # for arranging multiple plots
 setwd("~/Documents/Masters/Miss_Data_Proj/Simulation_2023/")
 
 invlogit <- function(x){return(exp(x)/(1+exp(x)))}
@@ -62,7 +63,7 @@ simu <- function(n = 306,
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
   ice_cutoff <- rho_0 # cutoff probability of IcE occuring
-  data$p <- ifelse(ice_cal<ice_cutoff, 1, 0) 
+  data$p <- ifelse(ice_cal<ice_cutoff, 0, 1) 
   
   #simulate outcome scores
   data$y1 <- beta_6 + beta_7*data$y0 + beta_8*data$arm + rnorm(n, 0, sigmasq_2)
@@ -196,6 +197,9 @@ run_many_simu <- function(n_iter = 100,
     mi_res <- output[["MI"]]
     cc_res <- output[["mod_cc"]]
     
+    print(mi_res$estimates)
+    print(confint(mi_res))
+    
     res$estim_mi[i] <- mi_res$estimates[3,1]
     res$sd_mi[i] <- mi_res$estimates[3,2]
     res$CI_low_mi[i] <- confint(mi_res)[3,1]
@@ -224,41 +228,42 @@ c <- run_many_simu(n_iter = 1000,
 #Plotting ideas:
 
 #Estimates & CI
-(combo <- ggarrange(ggplot(c) + 
+(combo <- ggarrange(ggplot(a) + 
                       geom_density(aes(x=CI_low_mi), alpha=0.5, fill="lightgreen") + 
                       geom_density(aes(x=CI_upp_mi), alpha=0.5, fill="lightblue") + 
                       geom_density(aes(x=estim_mi), alpha=0.5, fill="grey") + 
-                      ggtitle("Pct IcE = 40%") +
-                      theme_light() + xlim(-12,0) +
+                      ggtitle("Pct IcE = 20%") + xlab("") +
+                      theme_light() + xlim(-7.2,-2.5) +
                       geom_vline(xintercept=-4.7),
                     ggplot(b) + 
                       geom_density(aes(x=CI_low_mi), alpha=0.5, fill="lightgreen") + 
                       geom_density(aes(x=CI_upp_mi), alpha=0.5, fill="lightblue") + 
                       geom_density(aes(x=estim_mi), alpha=0.5, fill="grey") + 
-                      ggtitle("Pct IcE = 40%") +
-                      theme_light() + xlim(-12,0) +
+                      ggtitle("Pct IcE = 40%") + xlab("") +
+                      theme_light() + xlim(-7.2,-2.5) +
                       geom_vline(xintercept=-4.7) ,
-                    ggplot(a) + 
+                    ggplot(c) + 
                       geom_density(aes(x=CI_low_mi), alpha=0.5, fill="lightgreen") + 
                       geom_density(aes(x=CI_upp_mi), alpha=0.5, fill="lightblue") + 
                       geom_density(aes(x=estim_mi), alpha=0.5, fill="grey") + 
-                      ggtitle("Pct IcE = 20%") +
-                      theme_light() + xlim(-12,0) +
-                      geom_vline(xintercept=-4.7) +xlab("Estimate of 'arm' effect"), ncol=1))
-ggsave(paste("density_",lubridate::today(),".jpeg"),combo, width=5, height = 9)
+                      ggtitle("Pct IcE = 60%") + xlab("") +
+                      theme_light() + xlim(-7.2,-2.5) +
+                      geom_vline(xintercept=-4.7) #+xlab("Estimate of 'arm' effect")
+                    , ncol=1))
+ggsave(paste("s1_density_",lubridate::today(),".jpeg"),combo, width=7, height = 9)
 
 c1 <- "#bc4b51"
 c2 <- "#5b8e7d"
 
 #coverage?
-cova_cc <- round(100*sum(a$CI_low_mi<-4.7&a$CI_upp_mi>-4.7)/1000)
-cova_mi <- round(100*sum(a$CI_low_cc<-4.7&a$CI_upp_cc>-4.7)/1000)
-
-covb_cc <- round(100*sum(b$CI_low_mi<-4.7&b$CI_upp_mi>-4.7)/1000)
-covb_mi <- round(100*sum(b$CI_low_cc<-4.7&b$CI_upp_cc>-4.7)/1000)
-
-covc_cc <- round(100*sum(c$CI_low_mi<-4.7&c$CI_upp_mi>-4.7)/1000)
-covc_mi <- round(100*sum(c$CI_low_cc<-4.7&c$CI_upp_cc>-4.7)/1000)
+# cova_cc <- round(100*sum(a$CI_low_mi<-4.7&a$CI_upp_mi>-4.7)/1000)
+# cova_mi <- round(100*sum(a$CI_low_cc<-4.7&a$CI_upp_cc>-4.7)/1000)
+# 
+# covb_cc <- round(100*sum(b$CI_low_mi<-4.7&b$CI_upp_mi>-4.7)/1000)
+# covb_mi <- round(100*sum(b$CI_low_cc<-4.7&b$CI_upp_cc>-4.7)/1000)
+# 
+# covc_cc <- round(100*sum(c$CI_low_mi<-4.7&c$CI_upp_mi>-4.7)/1000)
+# covc_mi <- round(100*sum(c$CI_low_cc<-4.7&c$CI_upp_cc>-4.7)/1000)
 
 plota <- ggplot() + geom_boxplot(data=a, aes(x=estim_mi, y="Beta - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=a, aes(x=estim_cc, y="Beta - CC"), fill=c2, alpha=0.5) +
@@ -266,42 +271,43 @@ plota <- ggplot() + geom_boxplot(data=a, aes(x=estim_mi, y="Beta - MI"), fill=c1
   geom_boxplot(data=a, aes(x=CI_low_cc, y="Low Bound - CC"), fill=c2, alpha=0.5) +
   geom_boxplot(data=a, aes(x=CI_upp_mi, y="Upp Bound - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=a, aes(x=CI_upp_cc, y="Upp Bound - CC"), fill=c2, alpha=0.5) +
-  theme_light() + xlab("") + ylab("") + ggtitle("50% Affected by the IcE") + theme(text = element_text(size = 20)) 
-ggsave("50pct_150323.jpeg", plota, width=8, height=6)
+  theme_light() + xlab("") + ylab("") + ggtitle("20% Affected by the IcE") + theme(text = element_text(size = 20)) 
+ggsave(paste("s1_20pct-",today(),".jpeg", sep=""), plota, width=8, height=6)
 plotb <- ggplot() + geom_boxplot(data=b, aes(x=estim_mi, y="Beta - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=b, aes(x=estim_cc, y="Beta - CC"), fill=c2, alpha=0.5) +
   geom_boxplot(data=b, aes(x=CI_low_mi, y="Low Bound - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=b, aes(x=CI_low_cc, y="Low Bound - CC"), fill=c2, alpha=0.5) +
   geom_boxplot(data=b, aes(x=CI_upp_mi, y="Upp Bound - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=b, aes(x=CI_upp_cc, y="Upp Bound - CC"), fill=c2, alpha=0.5) +
-  theme_light() + xlab("") + ylab("") + ggtitle("80% Affected by the IcE") + theme(text = element_text(size = 20)) 
-ggsave("80pct_150323.jpeg", plotb, width=8, height=6)
+  theme_light() + xlab("") + ylab("") + ggtitle("40% Affected by the IcE") + theme(text = element_text(size = 20)) 
+ggsave(paste("s1_40pct-",today(),".jpeg", sep=""), plotb, width=8, height=6)
 plotc <- ggplot() + geom_boxplot(data=c, aes(x=estim_mi, y="Beta - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=c, aes(x=estim_cc, y="Beta - CC"), fill=c2, alpha=0.5) +
   geom_boxplot(data=c, aes(x=CI_low_mi, y="Low Bound - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=c, aes(x=CI_low_cc, y="Low Bound - CC"), fill=c2, alpha=0.5) +
   geom_boxplot(data=c, aes(x=CI_upp_mi, y="Upp Bound - MI"), fill=c1, alpha=0.5) +
   geom_boxplot(data=c, aes(x=CI_upp_cc, y="Upp Bound - CC"), fill=c2, alpha=0.5) +
-  theme_light() + xlab("") + ylab("") + ggtitle("20% Affected by the IcE") + theme(text = element_text(size = 20)) 
-ggsave("20pct_150323.jpeg", plotc, width=8, height=6)
+  theme_light() + xlab("") + ylab("") + ggtitle("60% Affected by the IcE") + theme(text = element_text(size = 20)) 
+ggsave(paste("s1_60pct-",today(),".jpeg", sep=""), plotc, width=8, height=6)
 
 #bias:
-ggarrange(ggplot(b) + 
+bias <- ggarrange(ggplot(a) + 
             geom_density(aes(x=c(-4.7-estim_mi)), alpha=0.5, fill="lightgreen") + 
             geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 80%") +xlab("Bias") +
-            theme_light() + xlim(-2,2) +
+            ggtitle("Pct IcE = 20%") +xlab("") +
+            theme_light() + xlim(-1,1) +
             geom_vline(xintercept=0),
-          ggplot(a) + 
+          ggplot(b) + 
             geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
             geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 50%") +
-            theme_light() +xlim(-2,2) + xlab("Bias") +
+            ggtitle("Pct IcE = 40%") +
+            theme_light() +xlim(-1,1) + xlab("") +
             geom_vline(xintercept=0) ,
           ggplot(c) + 
             geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
             geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 20%") +
-            theme_light() +xlim(-2,2) +#xlab("Bias") +
-            geom_vline(xintercept=0) +xlab("Bias of estimate of 'arm' effect"), ncol=1)#, width=5, height = 9)
+            ggtitle("Pct IcE = 60%") +
+            theme_light() +xlim(-1,1) +#xlab("Bias") +
+            geom_vline(xintercept=0) +xlab("Green = MI, Blue = CC"), ncol=1)#, width=5, height = 9)
+ggsave(paste("s1_bias-",today(),".jpeg", sep=""), bias, width=4, height=6)
 

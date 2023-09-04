@@ -13,7 +13,7 @@ invlogit <- function(x){return(exp(x)/(1+exp(x)))}
 simu <- function(n = 306,
                  
                  #  IcE occurrence variables:   TBC !
-                 rho_0 = 0.5,
+                 aim_rho_0 = 0.5,
                  rho_1 = 0.02,
                  rho_2 = 3,
                  rho_3 = 0.04,
@@ -65,7 +65,7 @@ simu <- function(n = 306,
                  sigmasq_2 = 0.7, #error dist term
                  
                  #regular missingness
-                 kappa_0 = -1.6,
+                 aim_kappa_0 = 0.6,
                  kappa_1 = -0.01,
                  kappa_2 = 0.24,
                  kappa_3 = 0.03,
@@ -139,10 +139,20 @@ if(nprev==0){stop("ISSUE: stratification variable has n=0")}
   #            2. IcE occurence               # 
   #-------------------------------------------#
   
+  #the actual rho_0 needs to be selected to get mean missingness cutoff == aim_rho_0
+  mu_relo = invlogit(delta_0 + delta_1*mu_age)
+  mu_healthc <- invlogit(alpha_0 + alpha_1*mu_age)
+  mu_income <- invlogit(eta_0 + eta_1*mu_age + eta_2*mu_healthc)
+  
+  #calculate rho_0 so that the expected ICE prop = aim_rho_0
+  rho_0 = log(aim_rho_0/(1-aim_rho_0)) - rho_1*mu_age  - rho_2*mu_relo - rho_3*mu_healthc -
+    rho_4*mu_income 
+  
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
   ice_cutoffs <- invlogit(rho_0 + rho_1*data$age + rho_2*data$relo + rho_3*data$healthc +
                             rho_4*data$high_income  + rnorm(n, 0, sigmasq_rho)) #cutoff determined by age + constant
+  print(paste("mean ICE cutoff:",mean(ice_cutoffs)))
   data$p <- ifelse(ice_cal<ice_cutoffs, 1, 0) 
   
   #simulate outcome scores
@@ -172,12 +182,23 @@ if(nprev==0){stop("ISSUE: stratification variable has n=0")}
   #         3. regular missingness            # 
   #-------------------------------------------#
   
+  mu_previnfo =  invlogit(gamma_0 + gamma_1*mu_age +
+                            gamma_2*mu_healthc +
+                            gamma_3*mu_income) 
+  mu_y0 = beta_0 + beta_1*mu_age + beta_2*mu_relo + beta_3*mu_healthc + beta_4*mu_income + beta_5*mu_previnfo 
+  mu_arm = 0.5
+  
+  kappa_0 = log(aim_kappa_0/(1-aim_kappa_0)) - 
+    kappa_1*mu_y0 - kappa_2*mu_arm -
+    kappa_3*mu_age - kappa_4*mu_relo -
+    kappa_5*mu_healthc
+  
   miss_probs <- runif(n) #random value
   miss_cutoffs <- invlogit(kappa_0 + kappa_1*data$y0 + kappa_2*data$arm +
                              kappa_3*data$age + kappa_4*data$relo +
                              kappa_5*data$healthc) #do we need to add more variability here?
   data$regmiss <- ifelse(miss_probs < miss_cutoffs, 1, 0) 
-  
+  print(paste("mean regmiss cutoff:",mean(miss_cutoffs)))
   #set all Missing values to missing for the imputation dataset
   data_mi$y1_star[regmiss=1] <- NA
   
@@ -251,7 +272,7 @@ if(nprev==0){stop("ISSUE: stratification variable has n=0")}
 }}
 
 #test it works:
-d <- simu(n = 300)
+d <- simu(n = 30000, aim_rho_0 = 0.4, aim_kappa_0 = 0.3)
 
 #function to run the above simulation over and over and collect key results
 run_many_simu <- function(n_iter = 100,

@@ -12,8 +12,8 @@ invlogit <- function(x){return(exp(x)/(1+exp(x)))}
 
 simu <- function(n = 306,
                  
-                 #  IcE occurrence variables:   TBC !
-                 rho_0 = 0.5,
+                 #  IcE occurrence variables:   TBC !22
+                 aim_rho_0 = 0.5,
                  rho_1 = -0.01,
                  rho_2 = 0.02,
                  rho_3 = -0.01,
@@ -73,7 +73,6 @@ simu <- function(n = 306,
                  print=F,
                  seedata=F){
   set.seed(seed)
-
   
   #-------------------------------------------#
   #           1. setup dataset                # 
@@ -131,11 +130,21 @@ if(nprev==0){stop("ISSUE: stratification variable has n=0")}
   #            2. IcE occurence               # 
   #-------------------------------------------#
   
+  #the actual rho_0 needs to be selected to get mean missingness of aim_rho_0
+  mu_relo = invlogit(delta_0 + delta_1*mu_age)
+  mu_healthc <- invlogit(alpha_0 + alpha_1*mu_age)
+  mu_income <- invlogit(eta_0 + eta_1*mu_age + eta_2*mu_healthc)
+  
+  #calculate rho_0 so that the expected ICE prop = aim_rho_0
+  rho_0 = log(aim_rho_0/(1-aim_rho_0)) - rho_1*mu_age 
+  - rho_2*mu_relo - rho_3*mu_healthc -
+    rho_4*mu_income 
+  
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
   ice_cutoffs <- invlogit(rho_0 + rho_1*data$age + rho_2*data$relo + rho_3*data$healthc +
                             rho_4*data$high_income  + rnorm(n, 0, sigmasq_rho)) #cutoff determined by age + constant
-  #print(mean(ice_cutoffs))
+  print(paste("mean ICE cutoff:",mean(ice_cutoffs)))
   data$p <- ifelse(ice_cal<ice_cutoffs, 1, 0) 
   
   #simulate outcome scores
@@ -236,7 +245,7 @@ if(nprev==0){stop("ISSUE: stratification variable has n=0")}
 }}
 
 #test it works:
-d <- simu(n = 300)
+d <- simu(n = 10000, aim_rho_0=0.6)
 
 #function to run the above simulation over and over and collect key results
 run_many_simu <- function(n_iter = 100,

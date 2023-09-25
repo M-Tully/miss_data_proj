@@ -1,9 +1,6 @@
-# The very simple model
-# 22-09-23  MTully
+# The medium simple model
+# 23-09-23  MTully
 #-------------------------
-
-# Add 1 X variable!
-# p = 
 
 # rsimsum package
 
@@ -26,6 +23,7 @@ simu <- function(n = 306,
                  
                  #  IcE occurrence variable
                  aim_rho_0 = 0.5,
+                 rho_1 = 0.7, # effect of X variable on IcE occurence
                  sigmasq_rho = 0.09,
                  
                  #Baseline DCS variables
@@ -38,7 +36,7 @@ simu <- function(n = 306,
                  beta_8 = -4.7, #intervention effect   !!-----------goal variable------!!
                  beta_9 = -0.9, #impact of baseline covariates X on followup
                  sigmasq_2 = 0.7, #error dist term
-
+                 
                  #ice effect:
                  mu_theta = 0.8, #? to vary
                  sigmasq_theta= 0.1, #? to vary
@@ -60,7 +58,7 @@ simu <- function(n = 306,
                      y1 = NA, #followup DCS
                      p=0 #start with IcE var (p) set to 'not occurred' for all
   )
-
+  
   #pick half of participant at random to be in arm 1
   stratify_arm <- sample(1:n, floor(n/2), prob=rep(1/n,n))
   data$arm[stratify_arm] <- 1
@@ -76,13 +74,14 @@ simu <- function(n = 306,
   data$x <- rnorm(n, x_mu, x_sd)
   
   #calculate rho_0 so that the expected ICE prop = aim_rho_0
-  # solve aim_rho_0 = Expectiation[invlogit(rho_0 + rnorm(n, 0, sigmasq_rho))], for rho_0
-  rho_0 = log(aim_rho_0/(1+aim_rho_0))
+  # solve aim_rho_0 = Expectiation[invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))], for rho_0
+  rho_0 = log(aim_rho_0/(1+aim_rho_0)) - rho_1*x_mu
   
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
-  ice_cutoff <-  invlogit(rho_0 + rnorm(n, 0, sigmasq_rho))  # cutoff probability of IcE occuring
+  ice_cutoff <-  invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))  # cutoff probability of IcE occuring
   data$p <- ifelse(ice_cal>ice_cutoff, 0, 1) 
+  print(mean(  ice_cutoff))
   
   #simulate outcome scores
   data$y1 <- beta_6 + beta_7*data$y0 + beta_8*data$arm + beta_9*data$x +rnorm(n, 0, sigmasq_2)
@@ -108,7 +107,7 @@ simu <- function(n = 306,
   #-------------------------------------------#
   #         3. regular missingness            # 
   #-------------------------------------------#
-
+  
   #-------------------------------------------#
   #         4. complete case                  # 
   #-------------------------------------------# 
@@ -184,6 +183,7 @@ d <- simu(n = 3000)
 run_many_simu <- function(n_iter = 100,
                           n=300,
                           aim_rho_0 = 0.5,
+                          rho_1 = 0.3, # effect of X variable
                           sigmasq_rho = 0.09,
                           beta_0 = 77, #constant
                           sigmasq_1 = 15, #error dist term
@@ -211,6 +211,7 @@ run_many_simu <- function(n_iter = 100,
     output <- simu(seed=i,
                    n=n,
                    aim_rho_0 = aim_rho_0,
+                   rho_1 = rho_1,
                    sigmasq_rho = sigmasq_rho,
                    beta_0 = beta_0, #constant
                    sigmasq_1 = sigmasq_1, #error dist term
@@ -225,8 +226,8 @@ run_many_simu <- function(n_iter = 100,
     cc_res <- output[["mod_cc"]]
     pct_ice <- output[["pct_ice"]]
     
-  #  print(mi_res$estimates)
-  #  print(confint(mi_res))
+    #  print(mi_res$estimates)
+    #  print(confint(mi_res))
     
     res$estim_mi[i] <- mi_res$estimates[3,1]
     res$sd_mi[i] <- mi_res$estimates[3,2]
@@ -250,12 +251,11 @@ run_many_simu <- function(n_iter = 100,
 a <- run_many_simu(n_iter = 50,n=1000,
                    aim_rho_0 = 0.2)
 mean(a$pct_ice)
-# 0.2155026, should be closer to 0.2 exactly..
 
 b <- run_many_simu(n_iter = 1000,
-                   rho_0 = 0.4)
+                   aim_rho_0 = 0.4)
 c <- run_many_simu(n_iter = 1000,
-                   rho_0 = 0.6)
+                   aim_rho_0 = 0.6)
 
 #Plotting ideas:
 
@@ -324,22 +324,22 @@ ggsave(paste("s1_60pct-",today(),".jpeg", sep=""), plotc, width=8, height=6)
 
 #bias:
 bias <- ggarrange(ggplot(a) + 
-            geom_density(aes(x=c(-4.7-estim_mi)), alpha=0.5, fill="lightgreen") + 
-            geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 20%") +xlab("") +
-            theme_light() + xlim(-1,1) +
-            geom_vline(xintercept=0),
-          ggplot(b) + 
-            geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
-            geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 40%") +
-            theme_light() +xlim(-1,1) + xlab("") +
-            geom_vline(xintercept=0) ,
-          ggplot(c) + 
-            geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
-            geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
-            ggtitle("Pct IcE = 60%") +
-            theme_light() +xlim(-1,1) +#xlab("Bias") +
-            geom_vline(xintercept=0) +xlab("Green = MI, Blue = CC"), ncol=1)#, width=5, height = 9)
+                    geom_density(aes(x=c(-4.7-estim_mi)), alpha=0.5, fill="lightgreen") + 
+                    geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
+                    ggtitle("Pct IcE = 20%") +xlab("") +
+                    theme_light() + xlim(-1,1) +
+                    geom_vline(xintercept=0),
+                  ggplot(b) + 
+                    geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
+                    geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
+                    ggtitle("Pct IcE = 40%") +
+                    theme_light() +xlim(-1,1) + xlab("") +
+                    geom_vline(xintercept=0) ,
+                  ggplot(c) + 
+                    geom_density(aes(x=-4.7-estim_mi), alpha=0.5, fill="lightgreen") + 
+                    geom_density(aes(x=-4.7-estim_cc), alpha=0.5, fill="lightblue") + 
+                    ggtitle("Pct IcE = 60%") +
+                    theme_light() +xlim(-1,1) +#xlab("Bias") +
+                    geom_vline(xintercept=0) +xlab("Green = MI, Blue = CC"), ncol=1)#, width=5, height = 9)
 ggsave(paste("s1_bias-",today(),".jpeg", sep=""), bias, width=4, height=6)
 

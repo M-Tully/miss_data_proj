@@ -2,7 +2,14 @@
 # 15-06-23  MTully
 #-------------------------
 
+# Add 1 X variable!
+# p = 
+
+# rsimsum package
+
+
 library(lubridate)
+library(rsimsum)
 library(dplyr)
 library(mice) # for MI
 library(mitml) #for pooling MI
@@ -13,8 +20,14 @@ invlogit <- function(x){return(exp(x)/(1+exp(x)))}
 
 simu <- function(n = 306,
                  
-                 #  IcE occurrence variables:   TBC !
-                 rho_0 = 0.5,
+                 # Baseline covariates (X)
+                 x_mu = 50,
+                 x_sd = 5,
+                 
+                 #  IcE occurrence variable
+                 aim_rho_0 = 0.5,
+                 rho_1 = 0.3, # effect of X variable
+                 sigmasq_rho = 0.09,
                  
                  #Baseline DCS variables
                  beta_0 = 77, #constant
@@ -36,14 +49,13 @@ simu <- function(n = 306,
                  seedata=F){
   set.seed(seed)
   
-  M = 100*rho_0
-  
   #-------------------------------------------#
   #           1. setup dataset                # 
   #-------------------------------------------#
   
   data <- data.frame(id = 1:n,
                      arm=0, #arm assignment
+                     x = NA, #covariates
                      y0 = NA, #baseline DCS
                      y1 = NA, #followup DCS
                      p=0 #start with IcE var (p) set to 'not occurred' for all
@@ -60,10 +72,20 @@ simu <- function(n = 306,
   #            2. IcE occurence               # 
   #-------------------------------------------#
   
+  # X - covariates
+  data$x <- rnorm(n, x_mu, x_sd)
+  
+  #calculate rho_0 so that the expected ICE prop = aim_rho_0
+  # solve aim_rho_0 = Expectiation[invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))], for rho_0
+  rho_0 = log(aim_rho_0/(1+aim_rho_0)) - rho_1*x_mu
+  
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
-  ice_cutoff <- rho_0 # cutoff probability of IcE occuring
-  data$p <- ifelse(ice_cal<ice_cutoff, 0, 1) 
+  ice_cutoff <-  invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))  # cutoff probability of IcE occuring
+  data$p <- ifelse(ice_cal>ice_cutoff, 0, 1) 
+  
+  print(paste("Aim IcE prop = ", aim_rho_0, '. Mean Ice cutoff = ', round(mean(ice_cutoff),2),
+              "Sample IcE prop = ", round(sum(data$p==1)/n,2)))
   
   #simulate outcome scores
   data$y1 <- beta_6 + beta_7*data$y0 + beta_8*data$arm + rnorm(n, 0, sigmasq_2)
@@ -109,6 +131,9 @@ simu <- function(n = 306,
     #        5. impute missingness              # 
     #-------------------------------------------#
     
+    # number of imputations is 1 per % missing, rule-of-thumb
+    M = 100*(sum(data$p==1)/n)
+    
     data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm", "y0", "y1_star", "p")], m = M, #method = "norm", 
                         maxit = 5, print=F)
     data_imp_a1 <- mice(data = data_mi[data_mi$arm==1,c("arm", "y0", "y1_star", "p")], m = M, #method = "norm", 
@@ -147,7 +172,8 @@ simu <- function(n = 306,
     results <- list("mod_cc" = mod_cc,
                     "mod_imp" = imp_res,
                     "MI" = MI_est,
-                    "data" = data)
+                    "data" = data,
+                    "pct_ice" = mean(ice_cutoff))
     
     return(results)
     
@@ -155,11 +181,14 @@ simu <- function(n = 306,
 
 
 #test it works:
-d <- simu(n = 30)
+d <- simu(n = 3000)
 
 #function to run the above simulation over and over and collect key results
 run_many_simu <- function(n_iter = 100,
-                          rho_0 = 0.5,
+                          n=300,
+                          aim_rho_0 = 0.5,
+                          rho_1 = 0.3, # effect of X variable
+                          sigmasq_rho = 0.09,
                           beta_0 = 77, #constant
                           sigmasq_1 = 15, #error dist term
                           beta_6 = 20, #constant
@@ -184,7 +213,10 @@ run_many_simu <- function(n_iter = 100,
     print(paste("****     Estimated total runtime: ", round(10.9*(tt),3), " ",units(tt) ,"    ****",sep=""))}
     
     output <- simu(seed=i,
-                   rho_0 = rho_0,
+                   n=n,
+                   aim_rho_0 = aim_rho_0,
+                   rho_1 = rho_1,
+                   sigmasq_rho = sigmasq_rho,
                    beta_0 = beta_0, #constant
                    sigmasq_1 = sigmasq_1, #error dist term
                    beta_6 = beta_6, #constant
@@ -196,9 +228,10 @@ run_many_simu <- function(n_iter = 100,
                    change=change)
     mi_res <- output[["MI"]]
     cc_res <- output[["mod_cc"]]
+    pct_ice <- output[["pct_ice"]]
     
-    print(mi_res$estimates)
-    print(confint(mi_res))
+  #  print(mi_res$estimates)
+  #  print(confint(mi_res))
     
     res$estim_mi[i] <- mi_res$estimates[3,1]
     res$sd_mi[i] <- mi_res$estimates[3,2]
@@ -208,6 +241,7 @@ run_many_simu <- function(n_iter = 100,
     res$sd_cc[i] <- summary(cc_res)$coefficients[3,2]
     res$CI_low_cc[i] <- confint(cc_res)[3,1]
     res$CI_upp_cc[i] <- confint(cc_res)[3,2]
+    res$pct_ice[i] <- pct_ice
   }
   
   endtime <- Sys.time()
@@ -218,8 +252,11 @@ run_many_simu <- function(n_iter = 100,
   return(res)
 }
 
-a <- run_many_simu(n_iter = 1000,
-                   rho_0 = 0.2)
+a <- run_many_simu(n_iter = 5000,n=1000,
+                   aim_rho_0 = 0.2)
+mean(a$pct_ice)
+# 0.2155026, should be closer to 0.2 exactly..
+
 b <- run_many_simu(n_iter = 1000,
                    rho_0 = 0.4)
 c <- run_many_simu(n_iter = 1000,

@@ -3,7 +3,7 @@
 #-------------------------
 
 # rsimsum package
-
+# vary X->P
 
 library(lubridate)
 library(rsimsum)
@@ -23,8 +23,7 @@ simu <- function(n = 306,
                  
                  #  IcE occurrence variable
                  aim_rho_0 = 0.5,
-                 rho_1 = 0.7, # effect of X variable on IcE occurence
-                 sigmasq_rho = 0.09,
+                 rho_1 = 0.7, # effect of X variable on IcE occurence, to vary
                  
                  #Baseline DCS variables
                  beta_0 = 77, #constant
@@ -79,9 +78,9 @@ simu <- function(n = 306,
   
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
-  ice_cutoff <-  invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))  # cutoff probability of IcE occuring
+  ice_cutoff <-  invlogit(rho_0 + rho_1*data$x)  # cutoff probability of IcE occuring
   data$p <- ifelse(ice_cal>ice_cutoff, 0, 1) 
-  print(mean(  ice_cutoff))
+  print(mean(ice_cutoff))
   
   #simulate outcome scores
   data$y1 <- beta_6 + beta_7*data$y0 + beta_8*data$arm + beta_9*data$x +rnorm(n, 0, sigmasq_2)
@@ -130,9 +129,9 @@ simu <- function(n = 306,
     # number of imputations is 1 per % missing, rule-of-thumb
     M = 100*(sum(data$p==1)/n)
     
-    data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm", "y0", "y1_star", "p")], m = M, #method = "norm", 
+    data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm", "y0", "y1_star", "x")], m = M, #method = "norm", 
                         maxit = 5, print=F)
-    data_imp_a1 <- mice(data = data_mi[data_mi$arm==1,c("arm", "y0", "y1_star", "p")], m = M, #method = "norm", 
+    data_imp_a1 <- mice(data = data_mi[data_mi$arm==1,c("arm", "y0", "y1_star", "x")], m = M, #method = "norm", 
                         maxit = 5, print=F)
     #stratified by ARM
     
@@ -150,7 +149,7 @@ simu <- function(n = 306,
       
       data_m <- rbind(data_m_a0, data_m_a1)
       
-      imp_mods[[m]] <- lm(y1_star ~ y0 + arm, data_m)
+      imp_mods[[m]] <- lm(y1_star ~ y0 + arm, data_m) # not x
       mod_m <- summary(lm(y1_star ~ y0 + arm, data_m))$coefficients
       
       if(print==T){ print( mod_m) }

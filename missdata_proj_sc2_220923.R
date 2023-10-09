@@ -11,14 +11,62 @@ library(dplyr)
 library(mice) # for MI
 library(mitml) #for pooling MI
 library(ggpubr) # for arranging multiple plots
+library(rsimsum) # plotting 
 setwd("~/Documents/Masters/Miss_Data_Proj/Simulation_2023/")
 
 invlogit <- function(x){return(exp(x)/(1+exp(x)))}
 
+
+find_rho <- function(actual_rho=0.3,rho_1=0.7, n=500, seed, x_mu=30, x_sd=5, print=F){
+  set.seed(seed)
+  aim_rho = 0.01
+  count = 1
+  repeat {
+    count = count + 1
+   if(print==T){ print(paste("input =",aim_rho))}
+    rho_0 = log(aim_rho/(1-aim_rho)) - rho_1*x_mu
+    ice_cal <- runif(n) #random value
+    x <- rnorm(n, x_mu, x_sd)
+    ice_cutoff <-  invlogit(rho_0 + rho_1*x)  # cutoff probability of IcE occuring
+    p <- ifelse(ice_cal>ice_cutoff, 0, 1) 
+    sample_rho <- (mean(p, na.rm=T))
+    if(print==T){  print(paste("prop=",sample_rho))}
+    if (abs(sample_rho-actual_rho)<0.001) break
+    if(count == 50000) break
+    aim_rho = min(max(aim_rho-sample_rho+actual_rho,0.0001),0.9999)
+  }
+  #new aim rho should be pretty close, so we can check everything in that range
+  if(round(sample_rho,3)==aim_rho){ return(aim_rho)}
+ else{
+   low = round(aim_rho,3)-0.001
+   high = round(aim_rho,3)+0.001
+   print(paste("Zooming in, low boundary =",low))
+   print(paste("Zooming in, high boundary =",high))
+   test_range <- seq(low,high,length.out=1000)
+   index <- 1
+   repeat{
+     if(print==T){ print(paste("input =",aim_rho))}
+     aim_rho <- test_range[index]
+     rho_0 = log(aim_rho/(1-aim_rho)) - rho_1*x_mu
+     ice_cal <- runif(n) #random value
+     x <- rnorm(n, x_mu, x_sd)
+     ice_cutoff <-  invlogit(rho_0 + rho_1*x)  # cutoff probability of IcE occuring
+     p <- ifelse(ice_cal>ice_cutoff, 0, 1) 
+     sample_rho <- (mean(p, na.rm=T))
+     if(print==T){  print(paste("prop=",sample_rho))}
+     if (abs(sample_rho-actual_rho)<0.00001) break
+     if(index ==1000) break
+     index <- index+1
+   } 
+   print(paste("prop=",sample_rho))
+return(aim_rho)}
+}
+
+
 simu <- function(n = 306,
                  
                  # Baseline covariates (X)
-                 x_mu = 50,
+                 x_mu = 30,
                  x_sd = 5,
                  
                  #  IcE occurrence variable
@@ -30,7 +78,7 @@ simu <- function(n = 306,
                  sigmasq_1 = 15, #error dist term
                  
                  #Followup DCS variables
-                 beta_6 = 20, #constant
+                 beta_6 = 50, #constant
                  beta_7 = 0.29, #effect of baseline DCS
                  beta_8 = -4.7, #intervention effect   !!-----------goal variable------!!
                  beta_9 = -0.9, #impact of baseline covariates X on followup
@@ -74,7 +122,7 @@ simu <- function(n = 306,
   
   #calculate rho_0 so that the expected ICE prop = aim_rho_0
   # solve aim_rho_0 = Expectiation[invlogit(rho_0 + rho_1*data$x + rnorm(n, 0, sigmasq_rho))], for rho_0
-  rho_0 = log(aim_rho_0/(1+aim_rho_0)) - rho_1*x_mu
+  rho_0 = log(aim_rho_0/(1-aim_rho_0)) - rho_1*x_mu 
   
   #simulate which participants are impacted by IcE (), probabilities are equal for all
   ice_cal <- runif(n) #random value
@@ -97,11 +145,11 @@ simu <- function(n = 306,
   else if(change=="multipl"){
     data$y1_star <- data$y1 * change_val^(data$p) }
   
+  #set all IcE affected values to missing for the imputation dataset
+  data$y1_star[data$p==1]<- NA
+  
   #new dataset for MI analyisis
   data_mi <- data
-  
-  #set all IcE affected values to missing for the imputation dataset
-  data_mi$y1_star[data_mi$p==0]<- NA
   
   #-------------------------------------------#
   #         3. regular missingness            # 
@@ -127,7 +175,7 @@ simu <- function(n = 306,
     #-------------------------------------------#
     
     # number of imputations is 1 per % missing, rule-of-thumb
-    M = 100*(sum(data$p==1)/n)
+    M = floor(100*(sum(data$p==1)/n))
     
     data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm", "y0", "y1_star", "x")], m = M, #method = "norm", 
                         maxit = 5, print=F)
@@ -176,14 +224,13 @@ simu <- function(n = 306,
 
 
 #test it works:
-d <- simu(n = 3000)
+d <- simu(n = 300)
 
 #function to run the above simulation over and over and collect key results
 run_many_simu <- function(n_iter = 100,
                           n=300,
                           aim_rho_0 = 0.5,
                           rho_1 = 0.3, # effect of X variable
-                          sigmasq_rho = 0.09,
                           beta_0 = 77, #constant
                           sigmasq_1 = 15, #error dist term
                           beta_6 = 20, #constant
@@ -211,7 +258,6 @@ run_many_simu <- function(n_iter = 100,
                    n=n,
                    aim_rho_0 = aim_rho_0,
                    rho_1 = rho_1,
-                   sigmasq_rho = sigmasq_rho,
                    beta_0 = beta_0, #constant
                    sigmasq_1 = sigmasq_1, #error dist term
                    beta_6 = beta_6, #constant
@@ -247,16 +293,137 @@ run_many_simu <- function(n_iter = 100,
   return(res)
 }
 
-a <- run_many_simu(n_iter = 50,n=1000,
+
+
+
+rho_0_input_A1 <- find_rho(actual_rho= 0.2,
+                           rho_1=0.2, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+rho_0_input_B1 <- find_rho(actual_rho= 0.4,
+                           rho_1=0.2, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+rho_0_input_C1 <- find_rho(actual_rho= 0.6,
+                           rho_1=0.2, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+
+
+
+A1 <- run_many_simu(n_iter = 5000, rho_1 = 0.2,
                    aim_rho_0 = 0.2)
-mean(a$pct_ice)
-
-b <- run_many_simu(n_iter = 1000,
+B1 <- run_many_simu(n_iter = 5000,rho_1 = 0.2,
                    aim_rho_0 = 0.4)
-c <- run_many_simu(n_iter = 1000,
+C1 <- run_many_simu(n_iter = 5000,rho_1 = 0.2,
                    aim_rho_0 = 0.6)
+combo1 <- data.frame(pct_ice = as.factor(c(rep("20%", 10000),
+                                          rep("40%", 10000),
+                                          rep("60%", 10000))),
+                    type = as.factor(c(rep(c("MI", "CC"), each=5000),
+                                       rep(c("MI", "CC"), each=5000),
+                                       rep(c("MI", "CC"), each=5000))),
+                    estim = c(A1$estim_mi, A1$estim_cc, B1$estim_mi, B1$estim_cc, 
+                              C1$estim_mi, C1$estim_cc))
+write.csv( combo1,paste("combo_sc2_weak", today(), ".csv", sep=""), row.names=F)
 
-#Plotting ideas:
+bias1 <- ggplot(combo1) + ylab("Bias") + ggtitle("rho_1 = 0.2") +
+  geom_boxplot(aes(x=pct_ice, y=-4.7-estim, group=interaction(pct_ice, type), fill=type), alpha=0.3) + theme_light()
+
+
+
+rho_0_input_A2 <- find_rho(actual_rho= 0.2,
+                        rho_1=0.9, 
+                        n=10000, 
+                        seed=912853,
+                        x_mu=30,
+                        x_sd=5)
+rho_0_input_B2 <- find_rho(actual_rho= 0.4,
+                           rho_1=0.9, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+rho_0_input_C2 <- find_rho(actual_rho= 0.6,
+                           rho_1=0.9, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+
+
+
+A2 <- run_many_simu(n_iter = 5000,rho_1=0.9,
+                   aim_rho_0 = rho_0_input_A2)
+B2 <- run_many_simu(n_iter = 5000,rho_1=0.9,
+                   aim_rho_0 = rho_0_input_B2)
+C2 <- run_many_simu(n_iter = 5000,rho_1=0.9,
+                   aim_rho_0 = rho_0_input_C2)
+combo2 <- data.frame(pct_ice = as.factor(c(rep("20%", 10000),
+                                          rep("40%", 10000),
+                                          rep("60%", 10000))),
+                    type = as.factor(c(rep(c("MI", "CC"), each=5000),
+                                       rep(c("MI", "CC"), each=5000),
+                                       rep(c("MI", "CC"), each=5000))),
+                    estim = c(A2$estim_mi, A2$estim_cc, B2$estim_mi, B2$estim_cc, 
+                              C2$estim_mi, C2$estim_cc))
+
+write.csv(combo2,paste("combo_sc2_mod", today(), ".csv", sep=""),  row.names=F)
+bias2 <- ggplot(combo2) + ylab("Bias") + ggtitle("rho_1 = 6") +
+  geom_boxplot(aes(x=pct_ice, y=-4.7-estim, group=interaction(pct_ice, type), fill=type), alpha=0.3) + theme_light()
+
+
+
+
+
+rho_0_input_A3 <- find_rho(actual_rho= 0.2,
+                           rho_1=0.5, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+rho_0_input_B3 <- find_rho(actual_rho= 0.4,
+                           rho_1=0.5, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+rho_0_input_C3 <- find_rho(actual_rho= 0.6,
+                           rho_1=0.5, 
+                           n=10000, 
+                           seed=912853,
+                           x_mu=30,
+                           x_sd=5)
+
+A3 <- run_many_simu(n_iter = 5000,rho_1=0.5,
+                    aim_rho_0 = 0.2)
+B3 <- run_many_simu(n_iter = 5000,rho_1=0.5,
+                    aim_rho_0 = 0.4)
+C3 <- run_many_simu(n_iter = 5000,rho_1=0.5,
+                    aim_rho_0 = 0.6)
+combo3 <- data.frame(pct_ice = as.factor(c(rep("20%", 10000),
+                                           rep("40%", 10000),
+                                           rep("60%", 10000))),
+                     type = as.factor(c(rep(c("MI", "CC"), each=5000),
+                                        rep(c("MI", "CC"), each=5000),
+                                        rep(c("MI", "CC"), each=5000))),
+                     estim = c(A3$estim_mi, A3$estim_cc, B3$estim_mi, B3$estim_cc, 
+                               C3$estim_mi, C3$estim_cc))
+write.csv( combo3,paste("combo_sc2_strong", today(), ".csv", sep=""), row.names=F)
+
+bias3 <- ggplot(combo3) + ylab("Bias") + ggtitle("rho_1 = 12") +
+  geom_boxplot(aes(x=pct_ice, y=-4.7-estim, group=interaction(pct_ice, type), fill=type), alpha=0.3) + theme_light()
+
+ggarrange(bias1,bias2,bias3, nrow=3)
+
+
+
 
 #Estimates & CI
 (combo <- ggarrange(ggplot(a) + 
@@ -341,4 +508,12 @@ bias <- ggarrange(ggplot(a) +
                     theme_light() +xlim(-1,1) +#xlab("Bias") +
                     geom_vline(xintercept=0) +xlab("Green = MI, Blue = CC"), ncol=1)#, width=5, height = 9)
 ggsave(paste("s1_bias-",today(),".jpeg", sep=""), bias, width=4, height=6)
+
+
+# rsimsum
+# "modelse"
+
+autoplot(simsum(a, estvarname = "estim_mi", se = "sd_mi", true=-4.7),
+         stats = c("empse"))
+
 

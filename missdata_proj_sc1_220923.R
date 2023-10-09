@@ -143,9 +143,9 @@ simu <- function(n = 306,
     # number of imputations is 1 per % missing, rule-of-thumb
     M = floor(100*(sum(data$p==1)/n))
     
-    data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm", "y0", "y1_star", "x")], m = M, #method = "norm", 
+    data_imp_a0 <- mice(data = data_mi[data_mi$arm==0,c("arm","y0", "y1_star", "x")], m = M, #method = "norm", 
                         maxit = 5, print=F)
-    data_imp_a1 <- mice(data = data_mi[data_mi$arm==1,c("arm", "y0", "y1_star", "x")], m = M, #method = "norm", 
+    data_imp_a1 <- mice(data = data_mi[data_mi$arm==1,c("arm","y0", "y1_star", "x")], m = M, #method = "norm", 
                         maxit = 5, print=F)
     #stratified by ARM
     
@@ -155,7 +155,7 @@ simu <- function(n = 306,
                           tval = NA)
     imp_mods <- list()
     for (m in 1:M) {
-      print(m)
+     # print(m)
      
       # Extract the mth imputed dataset
       data_m_a0 <- complete(data_imp_a0, m)
@@ -184,7 +184,7 @@ simu <- function(n = 306,
                     "pct_ice" = sum(data$p==1)/n)}
     
     return(results)
-    print(summary(data))
+   # print(summary(data))
   }}
 
 
@@ -213,7 +213,7 @@ run_many_simu <- function(n_iter = 100, n_iter_start=1,
   
   breaks = floor(seq(1,n_iter, length.out=11))
   
-  for(i in 1:n_iter){print(i)
+  for(i in 1:n_iter){
     if(i %in% breaks){print(paste("Starting sim ", i, " of ", n_iter, " -- ", round(100*max(0,(i-1))/n_iter), "% complete", sep=""))}
     if(i == breaks[2]){tt = difftime(Sys.time(),starttime)
     print(paste("****     Estimated total runtime: ", round(10.9*(tt),3), " ",units(tt) ,"    ****",sep=""))}
@@ -246,7 +246,7 @@ run_many_simu <- function(n_iter = 100, n_iter_start=1,
     res$sd_cc[i] <- summary(cc_res)$coefficients[3,2]
     res$CI_low_cc[i] <- confint(cc_res)[3,1]
     res$CI_upp_cc[i] <- confint(cc_res)[3,2]
-    res$pct_ice[i] <- pct_ice
+    res$pct_ice[i] <- output[["pct_ice"]]
   }
   
   endtime <- Sys.time()
@@ -257,34 +257,43 @@ run_many_simu <- function(n_iter = 100, n_iter_start=1,
   return(res)
 }
 
-
-simu(n=300, seed=57,
-aim_rho_0 = 0.3,
-beta_0 = 77, #constant
-sigmasq_1 = 15, #error dist term
-beta_6 = 50, #constant
-beta_7 = 0.29, #effect of baseline DCS
-beta_8 = -4.7, #intervention effect   !!-----------goal variable------!!
-sigmasq_2 = 0.7, #error dist term
-mu_theta = 0.8, #? to vary
-sigmasq_theta= 0.1, #? to vary
-change="additive")
-
-
-a <- run_many_simu(n_iter = 500,
+a <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.2)
-b <- run_many_simu(n_iter = 500,
+b <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.3) #>
-c <- run_many_simu(n_iter = 1000,
+c <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.4)
-d <- run_many_simu(n_iter = 1000,
+d <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.5)
-e <- run_many_simu(n_iter = 1000,
+e <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.6)
-f <- run_many_simu(n_iter = 1000,
+f <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.7)
-g <- run_many_simu(n_iter = 1000,
+g <- run_many_simu(n_iter = 5000,
                    aim_rho_0 = 0.8)
+
+combo <- data.frame(pct_ice = as.factor(c(rep(seq(0.1,0.8,0.1), each=10000))),
+                    type = as.factor(rep(c(rep(c("MI", "CC"), each=5000),8))),
+                    estim = c(a$estim_mi, a$estim_cc, b$estim_mi, b$estim_cc, 
+                              c$estim_mi, c$estim_cc, d$estim_mi, d$estim_cc, 
+                              e$estim_mi, e$estim_cc, f$estim_mi, f$estim_cc,
+                              g$estim_mi, g$estim_cc))
+
+
+a2 <- run_many_simu(n_iter = 5000,
+                    aim_rho_0 = 0.25)
+f2 <- run_many_simu(n_iter = 5000,
+                    aim_rho_0 = 0.75)
+
+
+combo <- data.frame(pct_ice = as.factor(c(rep(c(0.25,0.5,0.75), each=10000))),
+                    type = as.factor(rep(c(rep(c("MI", "CC"), each=5000),3))),
+                    estim = c(a2$estim_mi, a2$estim_cc, d$estim_mi, d$estim_cc, 
+                               f2$estim_mi, f2$estim_cc))
+
+
+
+
 
 resu <- data.frame(aim_rho_0 = rep(seq(0.2,0.8,0.1), each=1000,
                                    ))
@@ -306,11 +315,11 @@ resu <- data.frame(aim_rho_0 = rep(seq(0.2,0.8,0.1), each=1000,
                       ggtitle("Pct IcE = 40%") + xlab("") +
                       theme_light() + xlim(-7.2,-2.5) +
                       geom_vline(xintercept=-4.7) ,
-                    ggplot(e) + 
+                    ggplot(f) + 
                       geom_density(aes(x=CI_low_mi), alpha=0.5, fill="lightgreen") + 
                       geom_density(aes(x=CI_upp_mi), alpha=0.5, fill="lightblue") + 
                       geom_density(aes(x=estim_mi), alpha=0.5, fill="grey") + 
-                      ggtitle("Pct IcE = 50%") + xlab("") +
+                      ggtitle("Pct IcE = 70%") + xlab("") +
                       theme_light() + xlim(-7.2,-2.5) +
                       geom_vline(xintercept=-4.7) #+xlab("Estimate of 'arm' effect")
                     , ncol=1))
